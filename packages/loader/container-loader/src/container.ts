@@ -1608,30 +1608,32 @@ export class Container extends EventEmitterWithErrorHandling<IContainerEvents> i
         this.pkg = this.getCodeDetailsFromQuorum();
         const chaincode = this.pkg !== undefined ? await this.loadRuntimeFactory(this.pkg) : new NullChaincode();
 
-        // The relative loader will proxy requests to '/' to the loader itself assuming no non-cache flags
-        // are set. Global requests will still go directly to the loader
-        const loader = new RelativeLoader(this.loader, () => this.originalRequest);
+        await PerformanceEvent.timedExecAsync(this.logger, { eventName: "LoadRuntime" }, async (event) => {
+            // The relative loader will proxy requests to '/' to the loader itself assuming no non-cache flags
+            // are set. Global requests will still go directly to the loader
+            const loader = new RelativeLoader(this.loader, () => this.originalRequest);
 
-        this._context = await ContainerContext.createOrLoad(
-            this,
-            this.scope,
-            this.codeLoader,
-            chaincode,
-            snapshot,
-            attributes,
-            new DeltaManagerProxy(this._deltaManager),
-            new QuorumProxy(this.protocolHandler.quorum),
-            loader,
-            (warning: ContainerWarning) => this.raiseContainerWarning(warning),
-            (type, contents, batch, metadata) => this.submitContainerMessage(type, contents, batch, metadata),
-            (message) => this.submitSignal(message),
-            async (message) => this.snapshot(message),
-            (error?: ICriticalContainerError) => this.close(error),
-            Container.version,
-            previousRuntimeState,
-        );
+            this._context = await ContainerContext.createOrLoad(
+                this,
+                this.scope,
+                this.codeLoader,
+                chaincode,
+                snapshot,
+                attributes,
+                new DeltaManagerProxy(this._deltaManager),
+                new QuorumProxy(this.protocolHandler.quorum),
+                loader,
+                (warning: ContainerWarning) => this.raiseContainerWarning(warning),
+                (type, contents, batch, metadata) => this.submitContainerMessage(type, contents, batch, metadata),
+                (message) => this.submitSignal(message),
+                async (message) => this.snapshot(message),
+                (error?: ICriticalContainerError) => this.close(error),
+                Container.version,
+                previousRuntimeState,
+            );
+            loader.resolveContainer(this);
+        });
 
-        loader.resolveContainer(this);
         this.emit("contextChanged", this.pkg);
     }
 
