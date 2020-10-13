@@ -482,38 +482,45 @@ export class ContainerRuntime extends EventEmitter
         runtimeOptions?: IContainerRuntimeOptions,
         containerScope: IFluidObject = context.scope,
     ): Promise<ContainerRuntime> {
-        // Back-compat: <= 0.18 loader
-        if (context.deltaManager.lastSequenceNumber === undefined) {
-            Object.defineProperty(context.deltaManager, "lastSequenceNumber", {
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-                get: () => (context.deltaManager as any).referenceSequenceNumber,
+        const publicLogger = ChildLogger.create(context.logger, undefined, { runtimeVersion: pkgVersion });
+        const privateLogger = ChildLogger.create(publicLogger, "ContainerRuntime");
+
+        return PerformanceEvent.timedExecAsync(privateLogger, { eventName: "Load" },
+            async () => {
+                // Back-compat: <= 0.18 loader
+                if (context.deltaManager.lastSequenceNumber === undefined) {
+                    Object.defineProperty(context.deltaManager, "lastSequenceNumber", {
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+                        get: () => (context.deltaManager as any).referenceSequenceNumber,
+                    });
+                }
+
+                const registry = new ContainerRuntimeDataStoreRegistry(registryEntries);
+
+                const chunkId = context.baseSnapshot?.blobs[chunksBlobName];
+                const chunks = context.baseSnapshot && chunkId ? context.storage ?
+                    await readAndParse<[string, string[]][]>(context.storage, chunkId) :
+                    readAndParseFromBlobs<[string, string[]][]>(context.baseSnapshot.blobs, chunkId) : [];
+
+                const runtime = new ContainerRuntime(
+                    context,
+                    registry,
+                    chunks,
+                    runtimeOptions,
+                    containerScope,
+                    publicLogger,
+                    privateLogger,
+                    requestHandler);
+
+                // Create all internal data stores if not already existing on storage or loaded a detached
+                // container from snapshot(ex. draft mode).
+                if (!context.existing) {
+                    await runtime.createRootDataStore(TaskManagerFactory.type, taskSchedulerId);
+                }
+
+                runtime.subscribeToLeadership();
+                return runtime;
             });
-        }
-
-        const registry = new ContainerRuntimeDataStoreRegistry(registryEntries);
-
-        const chunkId = context.baseSnapshot?.blobs[chunksBlobName];
-        const chunks = context.baseSnapshot && chunkId ? context.storage ?
-            await readAndParse<[string, string[]][]>(context.storage, chunkId) :
-            readAndParseFromBlobs<[string, string[]][]>(context.baseSnapshot.blobs, chunkId) : [];
-
-        const runtime = new ContainerRuntime(
-            context,
-            registry,
-            chunks,
-            runtimeOptions,
-            containerScope,
-            requestHandler);
-
-        // Create all internal data stores if not already existing on storage or loaded a detached
-        // container from snapshot(ex. draft mode).
-        if (!context.existing) {
-            await runtime.createRootDataStore(TaskManagerFactory.type, taskSchedulerId);
-        }
-
-        runtime.subscribeToLeadership();
-
-        return runtime;
     }
 
     public get id(): string {
@@ -683,6 +690,8 @@ export class ContainerRuntime extends EventEmitter
             enableWorker: false,
         },
         private readonly containerScope: IFluidObject,
+        publicLogger: ITelemetryLogger,
+        privateLogger: ITelemetryLogger,
         private readonly requestHandler?: (request: IRequest, runtime: IContainerRuntime) => Promise<IResponse>,
     ) {
         super();
@@ -693,11 +702,8 @@ export class ContainerRuntime extends EventEmitter
         this.IFluidHandleContext = new ContainerFluidHandleContext("", this);
         this.IFluidSerializer = new FluidSerializer(this.IFluidHandleContext);
 
-        this.logger = ChildLogger.create(context.logger, undefined, {
-            runtimeVersion: pkgVersion,
-        });
-
-        this._logger = ChildLogger.create(this.logger, "ContainerRuntime");
+        this.logger = publicLogger;
+        this._logger = privateLogger;
 
         this.latestSummaryAck = {
             proposalHandle: undefined,
@@ -1287,13 +1293,11 @@ export class ContainerRuntime extends EventEmitter
         }
     }
 
-    public async createDataStore(pkg: string | string[]): Promise<IFluidRouter>
-    {
+    public async createDataStore(pkg: string | string[]): Promise<IFluidRouter> {
         return this._createDataStore(pkg);
     }
 
-    public async createRootDataStore(pkg: string | string[], rootDataStoreId: string): Promise<IFluidRouter>
-    {
+    public async createRootDataStore(pkg: string | string[], rootDataStoreId: string): Promise<IFluidRouter> {
         const fluidDataStore = await this._createDataStore(pkg, rootDataStoreId);
         fluidDataStore.bindToContext();
         return fluidDataStore;
@@ -1320,8 +1324,7 @@ export class ContainerRuntime extends EventEmitter
         return this._createFluidDataStoreContext(Array.isArray(pkg) ? pkg : [pkg], id, props).realize();
     }
 
-    private async _createDataStore(pkg: string | string[], id = uuid()): Promise<IFluidDataStoreChannel>
-    {
+    private async _createDataStore(pkg: string | string[], id = uuid()): Promise<IFluidDataStoreChannel> {
         return this._createFluidDataStoreContext(Array.isArray(pkg) ? pkg : [pkg], id).realize();
     }
 
@@ -1740,7 +1743,7 @@ export class ContainerRuntime extends EventEmitter
             assert(
                 this.deltaManager.lastSequenceNumber === summaryRefSeqNum,
                 `lastSequenceNumber changed before the summary op could be submitted. `
-                    + `${this.deltaManager.lastSequenceNumber} !== ${summaryRefSeqNum}`,
+                + `${this.deltaManager.lastSequenceNumber} !== ${summaryRefSeqNum}`,
             );
 
             const clientSequenceNumber =

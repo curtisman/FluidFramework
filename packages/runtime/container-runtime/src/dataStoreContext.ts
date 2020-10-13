@@ -50,6 +50,7 @@ import {
     IProvideFluidDataStoreFactory,
 } from "@fluidframework/runtime-definitions";
 import { SummaryTracker, addBlobToSummary, convertToSummaryTree } from "@fluidframework/runtime-utils";
+import { PerformanceEvent } from "@fluidframework/telemetry-utils";
 import { ContainerRuntime } from "./containerRuntime";
 
 // Snapshot Format Version to be used in store attributes.
@@ -251,28 +252,31 @@ export abstract class FluidDataStoreContext extends EventEmitter implements
     }
 
     protected async factoryFromPackagePath(packages) {
-        assert(this.pkg === packages);
+        return PerformanceEvent.timedExecAsync(this._containerRuntime.logger, { eventName: "DataStoreCodeLoad" },
+            async () => {
+                assert(this.pkg === packages);
 
-        let entry: FluidDataStoreRegistryEntry | undefined;
-        let registry: IFluidDataStoreRegistry | undefined = this._containerRuntime.IFluidDataStoreRegistry;
-        let lastPkg: string | undefined;
-        for (const pkg of packages) {
-            if (!registry) {
-                this.rejectDeferredRealize(`No registry for ${lastPkg} package`);
-            }
-            lastPkg = pkg;
-            entry = await registry.get(pkg);
-            if (!entry) {
-                this.rejectDeferredRealize(`Registry does not contain entry for the package ${pkg}`);
-            }
-            registry = entry.IFluidDataStoreRegistry;
-        }
-        const factory = entry?.IFluidDataStoreFactory;
-        if (factory === undefined) {
-            this.rejectDeferredRealize(`Can't find factory for ${lastPkg} package`);
-        }
+                let entry: FluidDataStoreRegistryEntry | undefined;
+                let registry: IFluidDataStoreRegistry | undefined = this._containerRuntime.IFluidDataStoreRegistry;
+                let lastPkg: string | undefined;
+                for (const pkg of packages) {
+                    if (!registry) {
+                        this.rejectDeferredRealize(`No registry for ${lastPkg} package`);
+                    }
+                    lastPkg = pkg;
+                    entry = await registry.get(pkg);
+                    if (!entry) {
+                        this.rejectDeferredRealize(`Registry does not contain entry for the package ${pkg}`);
+                    }
+                    registry = entry.IFluidDataStoreRegistry;
+                }
+                const factory = entry?.IFluidDataStoreFactory;
+                if (factory === undefined) {
+                    this.rejectDeferredRealize(`Can't find factory for ${lastPkg} package`);
+                }
 
-        return { factory, registry };
+                return { factory, registry };
+            });
     }
 
     private async realizeCore(): Promise<void> {
@@ -288,12 +292,15 @@ export abstract class FluidDataStoreContext extends EventEmitter implements
         assert(this.registry === undefined);
         this.registry = registry;
 
-        const channel = await factory.instantiateDataStore(this);
+        return PerformanceEvent.timedExecAsync(this._containerRuntime.logger, { eventName: "DataStoreInstantiate" },
+            async () => {
+                const channel = await factory.instantiateDataStore(this);
 
-        // back-compat: <= 0.25 allows returning nothing and calling bindRuntime() later directly.
-        if (channel !== undefined) {
-            this.bindRuntime(channel);
-        }
+                // back-compat: <= 0.25 allows returning nothing and calling bindRuntime() later directly.
+                if (channel !== undefined) {
+                    this.bindRuntime(channel);
+                }
+            });
     }
 
     /**
@@ -489,8 +496,7 @@ export abstract class FluidDataStoreContext extends EventEmitter implements
             throw new Error("Runtime already bound");
         }
 
-        try
-        {
+        try {
             assert(!this.detachedRuntimeCreation);
             assert(this.channelDeferred !== undefined);
             assert(this.pkg !== undefined);
@@ -769,8 +775,7 @@ export class LocalFluidDataStoreContext extends LocalFluidDataStoreContextBase {
  */
 export class LocalDetachedFluidDataStoreContext
     extends LocalFluidDataStoreContextBase
-    implements IFluidDataStoreContextDetached
-{
+    implements IFluidDataStoreContextDetached {
     constructor(
         id: string,
         runtime: ContainerRuntime,
@@ -798,8 +803,7 @@ export class LocalDetachedFluidDataStoreContext
     public async attachRuntime(
         packagePath: Readonly<string[]>,
         registry: IProvideFluidDataStoreFactory,
-        dataStoreRuntime: IFluidDataStoreChannel)
-    {
+        dataStoreRuntime: IFluidDataStoreChannel) {
         assert(this.detachedRuntimeCreation);
         assert(this.channelDeferred === undefined);
         assert(this.pkg === undefined);

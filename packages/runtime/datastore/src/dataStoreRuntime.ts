@@ -27,6 +27,7 @@ import {
 import {
     ChildLogger,
     raiseConnectedEvent,
+    PerformanceEvent,
 } from "@fluidframework/telemetry-utils";
 import { buildSnapshotTree, readAndParseFromBlobs } from "@fluidframework/driver-utils";
 import { TreeTreeEntry } from "@fluidframework/protocol-base";
@@ -93,7 +94,14 @@ export class FluidDataStoreRuntime extends EventEmitter implements IFluidDataSto
         context: IFluidDataStoreContext,
         sharedObjectRegistry: ISharedObjectRegistry,
     ): FluidDataStoreRuntime {
-        return new FluidDataStoreRuntime(context, sharedObjectRegistry);
+        const logger = ChildLogger.create(
+            context.containerRuntime.logger,
+            "DataStore",
+            { dataStoreId: uuid() });
+
+        return PerformanceEvent.timedExec(logger, { eventName: "Load" }, () => {
+            return new FluidDataStoreRuntime(context, sharedObjectRegistry, logger);
+        });
     }
 
     public get IFluidRouter() { return this; }
@@ -175,15 +183,13 @@ export class FluidDataStoreRuntime extends EventEmitter implements IFluidDataSto
     private readonly quorum: IQuorum;
     private readonly audience: IAudience;
     private readonly snapshotFn: (message: string) => Promise<void>;
-    public readonly logger: ITelemetryLogger;
 
     public constructor(
         private readonly dataStoreContext: IFluidDataStoreContext,
         private readonly sharedObjectRegistry: ISharedObjectRegistry,
+        public readonly logger: ITelemetryLogger,
     ) {
         super();
-
-        this.logger = ChildLogger.create(dataStoreContext.containerRuntime.logger, undefined, { dataStoreId: uuid() });
         this.documentId = dataStoreContext.documentId;
         this.id = dataStoreContext.id;
         this.parentBranch = dataStoreContext.parentBranch;
@@ -279,28 +285,30 @@ export class FluidDataStoreRuntime extends EventEmitter implements IFluidDataSto
     }
 
     public async request(request: IRequest): Promise<IResponse> {
-        const parser = RequestParser.create(request);
-        const id = parser.pathParts[0];
+        return PerformanceEvent.timedExecAsync(this.logger, { eventName: "Request" }, async () => {
+            const parser = RequestParser.create(request);
+            const id = parser.pathParts[0];
 
-        if (id === "_channels" || id === "_objects") {
-            return this.request(parser.createSubRequest(1));
-        }
+            if (id === "_channels" || id === "_objects") {
+                return this.request(parser.createSubRequest(1));
+            }
 
-        // Check for a data type reference first
-        if (this.contextsDeferred.has(id) && parser.isLeaf(1)) {
-            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-            const value = await this.contextsDeferred.get(id)!.promise;
-            const channel = await value.getChannel();
+            // Check for a data type reference first
+            if (this.contextsDeferred.has(id) && parser.isLeaf(1)) {
+                // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+                const value = await this.contextsDeferred.get(id)!.promise;
+                const channel = await value.getChannel();
 
-            return { mimeType: "fluid/object", status: 200, value: channel };
-        }
+                return { mimeType: "fluid/object", status: 200, value: channel };
+            }
 
-        // Otherwise defer to an attached request handler
-        if (this.requestHandler === undefined) {
-            return { status: 404, mimeType: "text/plain", value: `${request.url} not found` };
-        } else {
-            return this.requestHandler(parser);
-        }
+            // Otherwise defer to an attached request handler
+            if (this.requestHandler === undefined) {
+                return { status: 404, mimeType: "text/plain", value: `${request.url} not found` };
+            } else {
+                return this.requestHandler(parser);
+            }
+        });
     }
 
     public registerRequestHandler(handler: (request: IRequest) => Promise<IResponse>) {
@@ -771,11 +779,10 @@ export class FluidDataStoreRuntime extends EventEmitter implements IFluidDataSto
 // eslint-disable-next-line prefer-arrow/prefer-arrow-functions
 export function requestFluidDataStoreMixin(
     Base: typeof FluidDataStoreRuntime,
-    requestHandler: (request: IRequest, runtime: FluidDataStoreRuntime) => Promise<IResponse>)
-{
+    requestHandler: (request: IRequest, runtime: FluidDataStoreRuntime) => Promise<IResponse>) {
     return class RuntimeWithRequestHandler extends Base {
         public async request(request: IRequest) {
-            const response  = await super.request(request);
+            const response = await super.request(request);
             if (response.status === 404) {
                 return requestHandler(request, this);
             }
@@ -792,8 +799,7 @@ export function requestFluidDataStoreMixin(
 // eslint-disable-next-line prefer-arrow/prefer-arrow-functions
 export function summaryWaitFluidDataStoreMixin(
     Base: typeof FluidDataStoreRuntime,
-    init: () => Promise<void>)
-{
+    init: () => Promise<void>) {
     return class RuntimeWithSummarizerHandler extends Base {
         public async summarize(...args) {
             await init();
