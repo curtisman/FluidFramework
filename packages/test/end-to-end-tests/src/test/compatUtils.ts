@@ -304,27 +304,29 @@ export const generateLocalTest = (
 
 const generateTinyliciousTest = (
     tests: (compatArgs: ITestObjectProvider) => void,
-    options: ITestOptions = {},
+    options: ITestOptions,
 ) => {
-    describe("tinylicious", () => {
-        // Run with all current versions
-        const runtimeFactory = (containerOptions?: ITestContainerConfig) =>
-            createRuntimeFactory(
-                TestDataObject.type,
-                getDataStoreFactory(containerOptions),
-                containerOptions?.runtimeOptions,
+    if (options.tinylicious) {
+        describe("tinylicious", () => {
+            // Run with all current versions
+            const runtimeFactory = (containerOptions?: ITestContainerConfig) =>
+                createRuntimeFactory(
+                    TestDataObject.type,
+                    getDataStoreFactory(containerOptions),
+                    containerOptions?.runtimeOptions,
+                );
+
+            const testObjectProvider = new TinyliciousTestObjectProvider(
+                runtimeFactory,
             );
 
-        const testObjectProvider = new TinyliciousTestObjectProvider(
-            runtimeFactory,
-        );
+            tests(testObjectProvider);
 
-        tests(testObjectProvider);
-
-        afterEach(async () => {
-            await testObjectProvider.reset();
+            afterEach(async () => {
+                await testObjectProvider.reset();
+            });
         });
-    });
+    }
 };
 
 export const generateTest = (
@@ -332,7 +334,5 @@ export const generateTest = (
     options: ITestOptions = {},
 ) => {
     generateLocalTest(tests, options);
-    if (options.tinylicious) {
-        generateTinyliciousTest(tests);
-    }
+    generateTinyliciousTest(tests, options);
 };
