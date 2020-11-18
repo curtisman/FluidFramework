@@ -205,7 +205,7 @@ const DefaultSummaryConfiguration: ISummaryConfiguration = {
     maxTime: IdleDetectionTime * 12,
 
     // Snapshot if 1000 ops received since last snapshot.
-    maxOps: 1000,
+    maxOps: 100,
 
     // Wait 10 minutes for summary ack
     maxAckWaitTime: 600000,
