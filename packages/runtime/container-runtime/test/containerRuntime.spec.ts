@@ -13,7 +13,7 @@ import {
 } from "@fluidframework/protocol-definitions";
 import { IDeltaManager } from "@fluidframework/container-definitions";
 import { MockDeltaManager } from "@fluidframework/test-runtime-utils";
-import { ScheduleManager } from "../containerRuntime";
+import { ScheduleManager } from "../src/containerRuntime";
 
 describe("Runtime", () => {
     describe("Container Runtime", () => {

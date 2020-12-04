@@ -14,8 +14,8 @@ import {
     MessageType,
 } from "@fluidframework/protocol-definitions";
 import { MockLogger } from "@fluidframework/test-runtime-utils";
-import { RunningSummarizer } from "../summarizer";
-import { SummaryCollection } from "../summaryCollection";
+import { RunningSummarizer } from "../src/summarizer";
+import { SummaryCollection } from "../src/summaryCollection";
 
 describe("Runtime", () => {
     describe("Container Runtime", () => {

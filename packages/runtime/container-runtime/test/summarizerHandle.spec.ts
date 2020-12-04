@@ -8,7 +8,7 @@ import {
     IFluidHandle,
     IFluidLoadable,
 } from "@fluidframework/core-interfaces";
-import { SummarizerHandle } from "../summarizerHandle";
+import { SummarizerHandle } from "../src/summarizerHandle";
 
 const mockHandleContext: IFluidHandleContext = {
     absolutePath: "",

@@ -19,8 +19,8 @@ import { IDocumentStorageService } from "@fluidframework/driver-definitions";
 import { MockFluidDataStoreRuntime } from "@fluidframework/test-runtime-utils";
 import { createRootSummarizerNodeWithGC } from "@fluidframework/runtime-utils";
 import { TelemetryNullLogger } from "@fluidframework/common-utils";
-import { LocalFluidDataStoreContext } from "../dataStoreContext";
-import { ContainerRuntime } from "../containerRuntime";
+import { LocalFluidDataStoreContext } from "../src/dataStoreContext";
+import { ContainerRuntime } from "../src/containerRuntime";
 
 describe("Data Store Creation Tests", () => {
     describe("Store creation via local context creation and realize", () => {

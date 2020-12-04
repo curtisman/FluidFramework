@@ -24,8 +24,8 @@ import {
     IFluidDataStoreAttributes,
     LocalFluidDataStoreContext,
     RemotedFluidDataStoreContext,
-} from "../dataStoreContext";
-import { ContainerRuntime } from "../containerRuntime";
+} from "../src/dataStoreContext";
+import { ContainerRuntime } from "../src/containerRuntime";
 
 describe("Data Store Context Tests", () => {
     const dataStoreId = "Test1";
