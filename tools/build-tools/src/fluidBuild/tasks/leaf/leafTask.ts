@@ -42,7 +42,7 @@ export abstract class LeafTask extends Task {
         this.addDependentTasks(this.dependentTasks);
     }
 
-    public matchTask(command: string): LeafTask | undefined {
+    public matchTask(command: string, options?: any): LeafTask | undefined {
         return (this.command === command) ? this : undefined;
     }
 
