@@ -3,6 +3,7 @@
  * Licensed under the MIT License.
  */
 
+import { ILoader, IContainer } from "@fluidframework/container-definitions";
 import { Loader, waitContainerToCatchUp } from "@fluidframework/container-loader";
 import { IFluidCodeDetails } from "@fluidframework/core-interfaces";
 import { IDocumentServiceFactory, IUrlResolver } from "@fluidframework/driver-definitions";
@@ -23,6 +24,7 @@ export const createDocumentId = (): string=> uuid();
  * Shared base class for test object provider.  Contain code for loader and container creation and loading
  */
 export  class TestObjectProvider<TestContainerConfigType> {
+    private readonly _containers = new Set<IContainer>();
     private _documentServiceFactory: IDocumentServiceFactory | undefined;
     private _urlResolver: IUrlResolver | undefined;
     private _opProcessingController?: OpProcessingController;
@@ -86,7 +88,27 @@ export  class TestObjectProvider<TestContainerConfigType> {
      * @param testContainerConfig - optional configuring the test Container
      */
     public makeTestLoader(testContainerConfig?: TestContainerConfigType) {
-        return this.createLoader([[defaultCodeDetails, this.createFluidEntryPoint(testContainerConfig)]]);
+        const loader = this.createLoader([[defaultCodeDetails, this.createFluidEntryPoint(testContainerConfig)]]);
+        TestObjectProvider.patchLoader(loader, this._containers);
+        return loader;
+    }
+
+    public static patchLoader<LoaderType extends ILoader>(loader: LoaderType, containers: Set<IContainer>) {
+        const patch = <T, C extends IContainer>(fn: (...args: T[]) => Promise<C>) => {
+            const boundFn = fn.bind(loader);
+            return async (...args: T[]) => {
+                const container = await boundFn(...args);
+                containers.add(container);
+                return container;
+            };
+        };
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        loader.resolve = patch(loader.resolve);
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        loader.createDetachedContainer = patch(loader.createDetachedContainer);
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        loader.rehydrateDetachedContainerFromSnapshot = patch(loader.rehydrateDetachedContainerFromSnapshot);
+        return loader;
     }
 
     /**
@@ -119,6 +141,10 @@ export  class TestObjectProvider<TestContainerConfigType> {
     }
 
     public reset() {
+        for (const container of this._containers) {
+            container.close();
+        }
+        this._containers.clear();
         this._documentServiceFactory = undefined;
         this._urlResolver = undefined;
         this._opProcessingController = undefined;

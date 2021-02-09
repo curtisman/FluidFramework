@@ -5,7 +5,7 @@
 
 import { strict as assert } from "assert";
 import { IRequest, IFluidCodeDetails } from "@fluidframework/core-interfaces";
-import { AttachState } from "@fluidframework/container-definitions";
+import { AttachState, IContainer } from "@fluidframework/container-definitions";
 import { Loader } from "@fluidframework/container-loader";
 import { IUrlResolver } from "@fluidframework/driver-definitions";
 import {
@@ -40,8 +40,10 @@ describe(`Attach/Bind Api Tests For Attached Container`, () => {
     const createTestStatementForAttachedDetached = (name: string, attached: boolean) =>
         `${name} should be ${attached ? "Attached" : "Detached"}`;
 
+    const containers = new Set<IContainer>();
     async function createDetachedContainerAndGetRootDataStore() {
         const container = await loader.createDetachedContainer(codeDetails);
+        containers.add(container);
         // Get the root dataStore from the detached container.
         const response = await container.request({ url: "/" });
         const defaultDataStore = response.value;
@@ -81,6 +83,12 @@ describe(`Attach/Bind Api Tests For Attached Container`, () => {
         const urlResolver = driver.createUrlResolver();
         request = driver.createCreateNewRequest(documentId);
         loader = createTestLoader(urlResolver);
+    });
+
+    afterEach(() => {
+        for (const container of containers) {
+            container.close();
+        }
     });
 
     it("Attaching dataStore should not attach unregistered DDS", async () => {

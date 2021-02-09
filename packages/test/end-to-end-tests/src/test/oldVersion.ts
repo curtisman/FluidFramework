@@ -178,9 +178,28 @@ export function createTestObjectProvider(
         throw new Error("Must provide a driver when using the current loader");
     }
     if (oldLoader) {
-        return new TestObjectProvider(
+        const oldProvider = new TestObjectProvider(
             driver as any,
             containerFactoryFn as () => IRuntimeFactory);
+
+        // Remove once the older version support container tracking (for close)
+        if (!(TestObjectProvider as any).patchLoader) {
+            const containers = new Set<IContainer>();
+            const oldMakeTestLoader = oldProvider.makeTestLoader.bind(oldProvider);
+            oldProvider.makeTestLoader = (testContainerConfig?: unknown) => {
+                const testLoader = oldMakeTestLoader(testContainerConfig);
+                return newVer.TestObjectProvider.patchLoader(testLoader, containers);
+            };
+            const oldReset = oldProvider.reset.bind(oldProvider);
+            oldProvider.reset = () => {
+                for (const container of containers) {
+                    container.close();
+                }
+                containers.clear();
+                oldReset();
+            };
+        }
+        return oldProvider;
     } else {
         return new newVer.TestObjectProvider(
             driver, containerFactoryFn as () => newVer.IRuntimeFactory);
