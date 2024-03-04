@@ -11,7 +11,7 @@ import replace from "replace-in-file";
 import sortPackageJson from "sort-package-json";
 
 import { PackageJson, updatePackageJsonFile } from "../../common/npmPackage";
-import { getFluidBuildConfig } from "../../common/fluidUtils";
+import { loadFluidBuildConfig } from "../../common/fluidUtils";
 import { Handler, readFile, writeFile } from "../common";
 import { PackageNamePolicyConfig, ScriptRequirement } from "../../common/fluidRepo";
 
@@ -138,7 +138,7 @@ export function packageMayChooseToPublishToInternalFeedOnly(
  * private to prevent publishing.
  */
 export function packageMustBePrivate(name: string, root: string): boolean {
-	const config = getFluidBuildConfig(root).policy?.packageNames;
+	const config = loadFluidBuildConfig(root).policy?.packageNames;
 
 	if (config === undefined) {
 		// Unless configured, all packages must be private
@@ -157,7 +157,7 @@ export function packageMustBePrivate(name: string, root: string): boolean {
  * If we know a package needs to publish somewhere, then it must not be marked private to allow publishing.
  */
 export function packageMustNotBePrivate(name: string, root: string): boolean {
-	const config = getFluidBuildConfig(root).policy?.packageNames;
+	const config = loadFluidBuildConfig(root).policy?.packageNames;
 
 	if (config === undefined) {
 		// Unless configured, all packages must be private
@@ -173,7 +173,7 @@ export function packageMustNotBePrivate(name: string, root: string): boolean {
  * Whether the package either belongs to a known Fluid package scope or is a known unscoped package.
  */
 function packageIsFluidPackage(name: string, root: string): boolean {
-	const config = getFluidBuildConfig(root).policy?.packageNames;
+	const config = loadFluidBuildConfig(root).policy?.packageNames;
 
 	if (config === undefined) {
 		// Unless configured, all packages are considered Fluid packages
@@ -908,7 +908,7 @@ export const handlers: Handler[] = [
 		name: "npm-package-json-script-dep",
 		match,
 		handler: async (file, root) => {
-			const manifest = getFluidBuildConfig(root);
+			const manifest = loadFluidBuildConfig(root);
 			const commandPackages = manifest.policy?.dependencies?.commandPackages;
 			if (commandPackages === undefined) {
 				return;
@@ -1194,8 +1194,11 @@ export const handlers: Handler[] = [
 		name: "npm-package-json-esm",
 		match,
 		handler: async (file) => {
-			// This rule enforces that we have a module field in the package iff we have a ESM build
-			// So that tools like webpack will pack up the right version.
+			// This rule enforces that we have a type (or legacy module) field in the package iff
+			// we have an ESM build.
+			// Note that setting for type is not checked. Presence of the field indicates that
+			// some thought has been put in place. The package might be CJS first and ESM second
+			// with a secondary package.json specifying "type": "module" or use .mjs extensions.
 			let json: PackageJson;
 
 			try {
@@ -1210,13 +1213,14 @@ export const handlers: Handler[] = [
 			}
 			// Using the heuristic that our package use "build:esnext" or "tsc:esnext" to indicate
 			// that it has a ESM build.
+			// Newer packages may be ESM only and just use tsc to build ESM, which isn't detected.
 			const esnextScriptsNames = ["build:esnext", "tsc:esnext"];
 			const hasBuildEsNext = esnextScriptsNames.some((name) => scripts[name] !== undefined);
 			const hasModuleOutput = json.module !== undefined;
 
 			if (hasBuildEsNext) {
-				if (!hasModuleOutput) {
-					return "Missing 'module' field in package.json for ESM build";
+				if (json.type === undefined && !hasModuleOutput) {
+					return "Missing 'type' (or legacy 'module') field in package.json for ESM build";
 				}
 			} else {
 				// If we don't have a separate esnext build, it's still ok to have the "module"
@@ -1439,7 +1443,7 @@ export const handlers: Handler[] = [
 			}
 
 			const requirements =
-				getFluidBuildConfig(rootDirectoryPath).policy?.publicPackageRequirements;
+				loadFluidBuildConfig(rootDirectoryPath).policy?.publicPackageRequirements;
 			if (requirements === undefined) {
 				// If no requirements have been specified, we have nothing to validate.
 				return;
@@ -1494,7 +1498,7 @@ export const handlers: Handler[] = [
 				}
 
 				const requirements =
-					getFluidBuildConfig(rootDirectoryPath).policy?.publicPackageRequirements;
+					loadFluidBuildConfig(rootDirectoryPath).policy?.publicPackageRequirements;
 				if (requirements === undefined) {
 					// If no requirements have been specified, we have nothing to validate.
 					return;
