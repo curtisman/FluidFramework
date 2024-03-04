@@ -57,8 +57,10 @@ export class LesscTask extends LeafTask {
 export class CopyfilesTask extends LeafWithFileStatDoneFileTask {
 	private parsed: boolean = false;
 	private readonly upLevel: number = 0;
-	private readonly copySrcArg: string = "";
+	private readonly copySrcArg: string[] = [];
 	private readonly ignore: string = "";
+	private readonly all: boolean = false;
+	private readonly follow: boolean = false;
 	private readonly flat: boolean = false;
 	private readonly copyDstArg: string = "";
 
@@ -68,6 +70,7 @@ export class CopyfilesTask extends LeafWithFileStatDoneFileTask {
 		// TODO: something better
 		const args = this.command.split(" ");
 
+		const input: string[] = [];
 		for (let i = 1; i < args.length; i++) {
 			// Only handle -u arg
 			if (args[i] === "-u" || args[i] === "--up") {
@@ -90,17 +93,29 @@ export class CopyfilesTask extends LeafWithFileStatDoneFileTask {
 				this.flat = true;
 				continue;
 			}
-			if (args[i] === "-V") {
+			if (args[i] === "-F") {
+				this.follow = true;
 				continue;
 			}
-			if (this.copySrcArg === "") {
-				this.copySrcArg = unquote(args[i]);
-			} else if (this.copyDstArg === "") {
-				this.copyDstArg = unquote(args[i]);
-			} else {
-				return;
+			if (args[i] === "-a") {
+				this.all = true;
+				continue;
 			}
+			if (args[i].startsWith("-") || args[i].startsWith("--")) {
+				// copyfiles ignores flags it doesn't know as well.
+				continue;
+			}
+			input.push(args[i]);
 		}
+
+		if (input.length < 2) {
+			// Not enough arguments
+			return;
+		}
+
+		// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+		this.copyDstArg = input.pop()!;
+		this.copySrcArg = input;
 
 		this.parsed = true;
 	}
@@ -117,11 +132,16 @@ export class CopyfilesTask extends LeafWithFileStatDoneFileTask {
 			throw new Error("error parsing command line");
 		}
 		if (!this._srcFiles) {
-			const srcGlob = path.join(this.node.pkg.directory, this.copySrcArg);
-			this._srcFiles = await globFn(srcGlob, {
-				nodir: true,
-				ignore: this.ignore,
+			const srcFilesP = this.copySrcArg.map(async (srcArg) => {
+				const srcGlob = path.join(this.node.pkg.directory, srcArg);
+				return await globFn(srcGlob, {
+					nodir: true,
+					dot: this.all,
+					follow: this.follow,
+					ignore: this.ignore,
+				});
 			});
+			this._srcFiles = (await Promise.all(srcFilesP)).flat();
 		}
 		return this._srcFiles;
 	}
